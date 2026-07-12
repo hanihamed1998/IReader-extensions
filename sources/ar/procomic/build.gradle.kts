@@ -1,12 +1,11 @@
 listOf("ar").map { lang ->
     Extension(
-        name = "KolNovel",
-        versionCode = 2,
+        name = "ProComic",
+        versionCode = 1,
         libVersion = "2",
         lang = lang,
-        description = "Novels from KolNovel",
+        description = "روايات مترجمة - ProComic",
         nsfw = false,
         icon = DEFAULT_ICON,
-        assetsDir = "ar/kolnovel/main/assets",
     )
 }.also(::register)
