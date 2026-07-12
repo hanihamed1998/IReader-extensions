@@ -83,14 +83,14 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             nameSelector = "h1.entry-title",
             coverSelector = ".sertothumb img",
             coverAtt = "src",
-            authorBookSelector = ".serl:nth-child(3) .serval",
+            authorBookSelector = ".serl:nth-child(4) .serval",
             categorySelector = ".sertogenre a",
-            descriptionSelector = ".sersysn p",
+            descriptionSelector = ".sersys p",
         )
 
     override val chapterFetcher: Chapters
         get() = SourceFactory.Chapters(
-            selector = ".eplisterfull li a",
+            selector = ".eplisterfull ul li",
             nameSelector = ".epl-num",
             linkSelector = "a",
             linkAtt = "href",
@@ -98,7 +98,7 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
 
     override val contentFetcher: Content
         get() = SourceFactory.Content(
-            pageTitleSelector = ".entry-title",
-            pageContentSelector = ".entry-content p",
+            pageTitleSelector = "h1.entry-title",
+            pageContentSelector = ".entry-content",
         )
 }
