@@ -6,7 +6,6 @@ import ireader.core.source.model.Command
 import ireader.core.source.model.CommandList
 import ireader.core.source.model.Filter
 import ireader.core.source.model.FilterList
-import com.fleeksoft.ksoup.nodes.Document
 import tachiyomix.annotations.Extension
 
 
@@ -69,14 +68,6 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             search()
 
         )
-
-    override suspend fun getListRequest(
-        baseExploreFetcher: BaseExploreFetcher,
-        page: Int,
-        query: String
-    ): Document {
-        return super.getListRequest(baseExploreFetcher, page, query)
-    }
 
     override val detailFetcher: Detail
         get() = SourceFactory.Detail(
