@@ -1,14 +1,11 @@
 package ireader.novelparadise
 
-import io.ktor.client.HttpClient
-import ireader.core.log.Log
 import ireader.core.source.Dependencies
 import ireader.core.source.SourceFactory
 import ireader.core.source.model.Command
 import ireader.core.source.model.CommandList
 import ireader.core.source.model.Filter
 import ireader.core.source.model.FilterList
-import ireader.core.source.model.MangaInfo
 import com.fleeksoft.ksoup.nodes.Document
 import tachiyomix.annotations.Extension
 
@@ -55,7 +52,7 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
     fun search() :BaseExploreFetcher{
         return BaseExploreFetcher(
             "Search",
-            endpoint = "/page/{page}}/?s={query}",
+            endpoint = "/page/{page}/?s={query}",
             selector = ".maindet",
             nameSelector = ".mdinfo h2 a",
             coverSelector = "img",
@@ -78,9 +75,7 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
         page: Int,
         query: String
     ): Document {
-        val re=  super.getListRequest(baseExploreFetcher, page, query)
-        Log.error { re.html() }
-        return re
+        return super.getListRequest(baseExploreFetcher, page, query)
     }
 
     override val detailFetcher: Detail
@@ -103,7 +98,7 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
 
     override val contentFetcher: Content
         get() = SourceFactory.Content(
-            pageTitleSelector = "entry-title",
+            pageTitleSelector = ".entry-title",
             pageContentSelector = ".entry-content p",
         )
 }
