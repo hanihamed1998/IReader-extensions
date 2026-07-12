@@ -253,7 +253,7 @@ class ExtensionProcessor(
                 )
                 .addProperty(
                     PropertySpec.builder("id", Long::class, KModifier.OVERRIDE)
-                        .initializer("%L", arguments.id)
+                        .initializer("%L", arguments.id.toString(10))
                         .build()
                 )
 

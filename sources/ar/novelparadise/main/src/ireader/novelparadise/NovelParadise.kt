@@ -1,13 +1,19 @@
 package ireader.novelparadise
 
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import ireader.core.log.Log
 import ireader.core.source.Dependencies
 import ireader.core.source.SourceFactory
+import ireader.core.source.findInstance
+import ireader.core.source.model.ChapterInfo
 import ireader.core.source.model.Command
 import ireader.core.source.model.CommandList
 import ireader.core.source.model.Filter
 import ireader.core.source.model.FilterList
 import ireader.core.source.model.Page
 import ireader.core.source.model.Text
+import com.fleeksoft.ksoup.Ksoup
 import com.fleeksoft.ksoup.nodes.Document
 import tachiyomix.annotations.Extension
 
@@ -97,38 +103,62 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             pageContentSelector = ".entry-content",
         )
 
+    // Override to bypass 403 protection using browser
+    override suspend fun getPageList(chapter: ChapterInfo, commands: List<Command<*>>): List<Page> {
+        // Check for pre-fetched HTML from WebView
+        commands.filterIsInstance<Command.Content.Fetch>().firstOrNull()?.let { cmd ->
+            if (cmd.html.isNotBlank()) {
+                return pageContentParse(Ksoup.parse(cmd.html))
+            }
+        }
+
+        return try {
+            val html = try {
+                val browserResult = deps.httpClients.browser.fetch(
+                    url = chapter.key,
+                    selector = ".entry-content, .reading-content, .chapter-content",
+                    timeout = 30000
+                )
+                if (browserResult.isSuccess && browserResult.responseBody.isNotBlank()) {
+                    browserResult.responseBody
+                } else {
+                    val response = client.get(requestBuilder(chapter.key))
+                    response.bodyAsText()
+                }
+            } catch (e: Exception) {
+                Log.error { "NovelParadise: Browser fetch failed: ${e.message}" }
+                val response = client.get(requestBuilder(chapter.key))
+                response.bodyAsText()
+            }
+            pageContentParse(Ksoup.parse(html))
+        } catch (e: Exception) {
+            Log.error { "NovelParadise: Error fetching content: ${e.message}" }
+            listOf(Text("المحتوى غير متوفر. جرب فتح الفصل مرة أخرى."))
+        }
+    }
+
     override fun pageContentParse(document: Document): List<Page> {
-        // Remove noise elements first
-        document.select("script, style, noscript, iframe, nav, footer, header, .sidebar, .comments, .navigation, .ads, .ad-placeholder, .ad-placeholder, [class*=ad-], [id*=ad-]").remove()
+        // Remove noise
+        document.select("script, style, noscript, iframe, nav, footer, header, .sidebar, .comments, .ads, [class*=ad-], .announ").remove()
 
         val content = mutableListOf<String>()
 
-        // Extract title
-        val title = document.selectFirst("h1.entry-title, h1.chapter-heading, h2.entry-title, .chapter-heading")
-            ?.text()?.trim()
-        if (!title.isNullOrBlank()) {
-            content.add(title)
-        }
+        // Title
+        val title = document.selectFirst("h1.entry-title, h1.chapter-heading")?.text()?.trim()
+        if (!title.isNullOrBlank()) content.add(title)
 
-        // Try multiple selectors to find chapter content paragraphs
-        val paragraphSelectors = listOf(
+        // Try paragraphs from content containers
+        val selectors = listOf(
             ".entry-content p",
             ".chapter-content p",
             ".reading-content p",
             "#chapter-content p",
-            ".post-body p",
-            ".text-left p",
             "article .entry-content p",
-            "article p",
         )
-
-        for (selector in paragraphSelectors) {
+        for (selector in selectors) {
             val paragraphs = document.select(selector)
                 .map { it.text().trim() }
-                .filter { it.isNotBlank() }
-                .filter { it.length > 3 }
-                .filter { !it.contains("Loading", ignoreCase = true) }
-                .filter { !it.contains("click here", ignoreCase = true) }
+                .filter { it.isNotBlank() && it.length > 3 }
                 .distinct()
             if (paragraphs.size >= 2) {
                 content.addAll(paragraphs)
@@ -136,31 +166,14 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             }
         }
 
-        // Fallback: try getting text from content containers
-        val containerSelectors = listOf(
-            ".entry-content",
-            ".chapter-content",
-            ".reading-content",
-            "#chapter-content",
-            "article .entry-content",
-            "article",
-            ".post-content",
-            ".the-content",
-        )
-
-        for (selector in containerSelectors) {
+        // Fallback: get all text from containers
+        val containers = listOf(".entry-content", ".chapter-content", ".reading-content", "article .entry-content", "article")
+        for (selector in containers) {
             val container = document.selectFirst(selector) ?: continue
-            // Remove noise inside the container too
-            container.select("script, style, noscript, .ads, [class*=ad-]").remove()
-
+            container.select("script, style, noscript, .ads").remove()
             val text = container.text().trim()
             if (text.isNotBlank() && text.length > 50) {
-                val lines = text.split("\n", "\r\n")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() && it.length > 3 }
-                    .filter { !it.contains("Loading", ignoreCase = true) }
-                    .filter { !it.contains("click here", ignoreCase = true) }
-                    .distinct()
+                val lines = text.split("\n").map { it.trim() }.filter { it.isNotBlank() && it.length > 3 }.distinct()
                 if (lines.isNotEmpty()) {
                     content.addAll(lines)
                     return content.map { Text(it) }
@@ -168,12 +181,7 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             }
         }
 
-        // Last resort: if we have at least a title, return it
-        if (content.isNotEmpty()) {
-            return content.map { Text(it) }
-        }
-
-        // Absolute fallback: never return empty list
-        return listOf(Text("جاري تحميل المحتوى... يرجى المحاولة مرة أخرى"))
+        if (content.isNotEmpty()) return content.map { Text(it) }
+        return listOf(Text("جاري تحميل المحتوى... حاول مرة أخرى"))
     }
 }
