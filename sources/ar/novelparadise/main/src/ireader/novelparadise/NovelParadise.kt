@@ -6,6 +6,9 @@ import ireader.core.source.model.Command
 import ireader.core.source.model.CommandList
 import ireader.core.source.model.Filter
 import ireader.core.source.model.FilterList
+import ireader.core.source.model.Page
+import ireader.core.source.model.Text
+import com.fleeksoft.ksoup.nodes.Document
 import tachiyomix.annotations.Extension
 
 
@@ -35,7 +38,7 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
         )
     }
 
-    fun fetcherCreator(name:String, endpoint:String) :BaseExploreFetcher{
+    fun fetcherCreator(name: String, endpoint: String): BaseExploreFetcher {
         return BaseExploreFetcher(
             name,
             endpoint = "/series/?page={page}&status=&type=&order=$name",
@@ -48,7 +51,8 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             maxPage = 50,
         )
     }
-    fun search() :BaseExploreFetcher{
+
+    fun search(): BaseExploreFetcher {
         return BaseExploreFetcher(
             "Search",
             endpoint = "/page/{page}/?s={query}",
@@ -62,11 +66,11 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             type = SourceFactory.Type.Search
         )
     }
+
     override val exploreFetchers: List<BaseExploreFetcher>
         get() = listOf(
-            fetcherCreator("Last Update","update"),
+            fetcherCreator("Last Update", "update"),
             search()
-
         )
 
     override val detailFetcher: Detail
@@ -92,4 +96,84 @@ abstract class NovelParadise(private val deps: Dependencies) : SourceFactory(
             pageTitleSelector = "h1.entry-title",
             pageContentSelector = ".entry-content",
         )
+
+    override fun pageContentParse(document: Document): List<Page> {
+        // Remove noise elements first
+        document.select("script, style, noscript, iframe, nav, footer, header, .sidebar, .comments, .navigation, .ads, .ad-placeholder, .ad-placeholder, [class*=ad-], [id*=ad-]").remove()
+
+        val content = mutableListOf<String>()
+
+        // Extract title
+        val title = document.selectFirst("h1.entry-title, h1.chapter-heading, h2.entry-title, .chapter-heading")
+            ?.text()?.trim()
+        if (!title.isNullOrBlank()) {
+            content.add(title)
+        }
+
+        // Try multiple selectors to find chapter content paragraphs
+        val paragraphSelectors = listOf(
+            ".entry-content p",
+            ".chapter-content p",
+            ".reading-content p",
+            "#chapter-content p",
+            ".post-body p",
+            ".text-left p",
+            "article .entry-content p",
+            "article p",
+        )
+
+        for (selector in paragraphSelectors) {
+            val paragraphs = document.select(selector)
+                .map { it.text().trim() }
+                .filter { it.isNotBlank() }
+                .filter { it.length > 3 }
+                .filter { !it.contains("Loading", ignoreCase = true) }
+                .filter { !it.contains("click here", ignoreCase = true) }
+                .distinct()
+            if (paragraphs.size >= 2) {
+                content.addAll(paragraphs)
+                return content.map { Text(it) }
+            }
+        }
+
+        // Fallback: try getting text from content containers
+        val containerSelectors = listOf(
+            ".entry-content",
+            ".chapter-content",
+            ".reading-content",
+            "#chapter-content",
+            "article .entry-content",
+            "article",
+            ".post-content",
+            ".the-content",
+        )
+
+        for (selector in containerSelectors) {
+            val container = document.selectFirst(selector) ?: continue
+            // Remove noise inside the container too
+            container.select("script, style, noscript, .ads, [class*=ad-]").remove()
+
+            val text = container.text().trim()
+            if (text.isNotBlank() && text.length > 50) {
+                val lines = text.split("\n", "\r\n")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && it.length > 3 }
+                    .filter { !it.contains("Loading", ignoreCase = true) }
+                    .filter { !it.contains("click here", ignoreCase = true) }
+                    .distinct()
+                if (lines.isNotEmpty()) {
+                    content.addAll(lines)
+                    return content.map { Text(it) }
+                }
+            }
+        }
+
+        // Last resort: if we have at least a title, return it
+        if (content.isNotEmpty()) {
+            return content.map { Text(it) }
+        }
+
+        // Absolute fallback: never return empty list
+        return listOf(Text("جاري تحميل المحتوى... يرجى المحاولة مرة أخرى"))
+    }
 }

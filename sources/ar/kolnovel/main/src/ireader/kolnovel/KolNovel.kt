@@ -222,14 +222,42 @@ abstract class KolNovel(private val deps: Dependencies) : SourceFactory(deps = d
 
     private fun parseContentFromHtml(html: String): List<Page> {
         val doc = Ksoup.parse(html)
-        val contentDiv = doc.selectFirst(".reading-content, .text-left, .chapter-content")
+
+        // Try to find the main content container
+        val contentDiv = doc.selectFirst(".reading-content .text-left, .reading-content, .chapter-content, .entry-content")
+
         if (contentDiv != null) {
-            val paragraphs = contentDiv.select("p").map { it.text() }.filter { it.isNotBlank() }
+            // Remove script, style, and hidden elements
+            contentDiv.select("script, style, .hidden, .d-none, iframe, .code-block, .wp-block-spacer, noscript").remove()
+
+            val paragraphs = contentDiv.select("p")
+                .map { it.text().trim() }
+                .filter { it.isNotBlank() }
+                .filter { it.length > 3 }
+                .distinct()
             if (paragraphs.isNotEmpty()) return paragraphs.map { Text(it) }
-            val text = contentDiv.text()
-            if (text.isNotBlank()) return text.split("\n").filter { it.isNotBlank() }.map { Text(it) }
+
+            val text = contentDiv.text().trim()
+            if (text.isNotBlank()) {
+                return text.split("\n")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && it.length > 3 }
+                    .distinct()
+                    .map { Text(it) }
+            }
         }
-        val bodyText = doc.body()?.text() ?: ""
-        return bodyText.split("\n").filter { it.isNotBlank() }.map { Text(it) }
+
+        // Fallback: try to find content in article body only
+        val article = doc.selectFirst("article, .post-body, .single-content")
+        if (article != null) {
+            article.select("script, style, .hidden, d-none, iframe, nav, footer, header, .sidebar, .comments, .navigation").remove()
+            val paragraphs = article.select("p")
+                .map { it.text().trim() }
+                .filter { it.isNotBlank() && it.length > 3 }
+                .distinct()
+            if (paragraphs.isNotEmpty()) return paragraphs.map { Text(it) }
+        }
+
+        return listOf(Text("المحتوى غير متوفر حالياً."))
     }
 }
